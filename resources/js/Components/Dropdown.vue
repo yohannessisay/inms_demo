@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 
 const props = defineProps({
     align: {
@@ -16,46 +16,105 @@ const props = defineProps({
     },
 });
 
-const closeOnEscape = (e) => {
-    if (open.value && e.key === 'Escape') {
-        open.value = false;
-    }
-};
-
-onMounted(() => document.addEventListener('keydown', closeOnEscape));
-onUnmounted(() => document.removeEventListener('keydown', closeOnEscape));
-
 const widthClass = computed(() => {
     return {
         48: 'w-48',
     }[props.width.toString()];
 });
 
-const alignmentClasses = computed(() => {
-    if (props.align === 'left') {
-        return 'ltr:origin-top-left rtl:origin-top-right start-0';
-    } else if (props.align === 'right') {
-        return 'ltr:origin-top-right rtl:origin-top-left end-0';
-    } else {
-        return 'origin-top';
+const open = ref(false);
+const triggerRef = ref(null);
+const contentRef = ref(null);
+const menuStyles = ref({});
+
+const widthPx = computed(() => {
+    const value = Number(props.width);
+    return Number.isFinite(value) ? value * 4 : 192;
+});
+
+const updatePosition = () => {
+    if (!open.value || !triggerRef.value) return;
+    const rect = triggerRef.value.getBoundingClientRect();
+    const menuWidth = widthPx.value || contentRef.value?.offsetWidth || 192;
+    let left = rect.left;
+
+    if (props.align === 'right') {
+        left = rect.right - menuWidth;
+    } else if (props.align === 'center') {
+        left = rect.left + rect.width / 2 - menuWidth / 2;
+    }
+
+    const padding = 8;
+    left = Math.max(padding, Math.min(left, window.innerWidth - menuWidth - padding));
+
+    menuStyles.value = {
+        top: `${rect.bottom + 8}px`,
+        left: `${left}px`,
+    };
+};
+
+const closeOnEscape = (e) => {
+    if (open.value && e.key === 'Escape') {
+        open.value = false;
+    }
+};
+
+const toggle = async () => {
+    open.value = !open.value;
+    if (open.value) {
+        await nextTick();
+        updatePosition();
+    }
+};
+
+watch(open, async (value) => {
+    if (value) {
+        await nextTick();
+        updatePosition();
     }
 });
 
-const open = ref(false);
+const handleViewportChange = () => {
+    if (open.value) {
+        updatePosition();
+    }
+};
+
+onMounted(() => {
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('keydown', closeOnEscape);
+    window.removeEventListener('resize', handleViewportChange);
+    window.removeEventListener('scroll', handleViewportChange, true);
+});
 </script>
 
 <template>
     <div class="relative">
-        <div @click="open = !open">
+        <div ref="triggerRef" @click="toggle">
             <slot name="trigger" />
         </div>
+    </div>
 
-        <!-- Full Screen Dropdown Overlay -->
-        <div
-            v-show="open"
-            class="fixed inset-0 z-40"
-            @click="open = false"
-        ></div>
+    <Teleport to="body">
+        <Transition
+            enter-active-class="transition ease-out duration-200"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition ease-in duration-150"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0"
+        >
+            <div
+                v-if="open"
+                class="fixed inset-0 z-[90]"
+                @click="open = false"
+            ></div>
+        </Transition>
 
         <Transition
             enter-active-class="transition ease-out duration-200"
@@ -66,11 +125,12 @@ const open = ref(false);
             leave-to-class="opacity-0 scale-95"
         >
             <div
-                v-show="open"
-                class="absolute z-50 mt-2 rounded-md shadow-lg"
-                :class="[widthClass, alignmentClasses]"
-                style="display: none"
-                @click="open = false"
+                v-if="open"
+                ref="contentRef"
+                class="fixed z-[100] rounded-md shadow-lg"
+                :class="widthClass"
+                :style="menuStyles"
+                @click.stop="open = false"
             >
                 <div
                     class="rounded-md ring-1 ring-black ring-opacity-5"
@@ -80,5 +140,5 @@ const open = ref(false);
                 </div>
             </div>
         </Transition>
-    </div>
+    </Teleport>
 </template>

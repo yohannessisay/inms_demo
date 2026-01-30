@@ -169,7 +169,7 @@ const roleLabel = (slug) => props.roles.find((role) => role.slug === slug)?.name
                     <Button variant="secondary" @click="applyFilters">Apply</Button>
                 </div>
 
-                <div class="mt-6 overflow-x-auto">
+                <div class="relative mt-6 overflow-x-auto overflow-y-visible">
                     <table class="min-w-full text-left text-sm">
                         <thead class="text-xs uppercase tracking-[0.2em] text-slate-500">
                             <tr>

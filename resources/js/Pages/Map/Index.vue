@@ -41,6 +41,7 @@ let map = null;
 let geoLayer = null;
 let outlineLayer = null;
 let pinnedPopup = null;
+let selectedLayer = null;
 
 const formatNumber = (value) => {
     if (value === null || value === undefined) return 'N/A';
@@ -102,30 +103,42 @@ const createOutline = (data) => {
     }).addTo(map);
 };
 
+const getLocationParts = (feature) => {
+    const region = feature.properties.adm1 || feature.properties.name;
+    const zone = feature.properties.adm2 || (feature.properties.level === 2 ? feature.properties.name : null);
+    const woreda = feature.properties.level === 3 ? feature.properties.name : null;
+
+    return { region, zone, woreda };
+};
+
 const buildTooltipHtml = (feature) => {
-    const locationLine = feature.properties.adm2
-        ? `${feature.properties.adm2}, ${feature.properties.adm1}`
-        : feature.properties.adm1;
+    const { region, zone, woreda } = getLocationParts(feature);
 
     return `
         <div class="map-tooltip">
             <div class="map-tooltip-title">${feature.properties.name}</div>
-            <div class="map-tooltip-subtitle">${locationLine}</div>
+            <div class="map-tooltip-subtitle">
+                ${region ? `<div>Region: ${region}</div>` : ''}
+                ${zone ? `<div>Zone: ${zone}</div>` : ''}
+                ${woreda ? `<div>Woreda: ${woreda}</div>` : ''}
+            </div>
             <div class="map-tooltip-value">${metricKey.value.replace('_', ' ')}: ${formatNumber(feature.properties[metricKey.value])}</div>
         </div>
     `;
 };
 
 const buildPopupHtml = (feature) => {
-    const locationLine = feature.properties.adm2
-        ? `${feature.properties.adm2}, ${feature.properties.adm1}`
-        : feature.properties.adm1;
+    const { region, zone, woreda } = getLocationParts(feature);
 
     return `
         <div class="map-label map-label--pin">
             <div class="map-label-tag">Pinned</div>
             <div class="map-label-title">${feature.properties.name}</div>
-            <div class="map-label-subtitle">${locationLine}</div>
+            <div class="map-label-subtitle">
+                ${region ? `<div>Region: ${region}</div>` : ''}
+                ${zone ? `<div>Zone: ${zone}</div>` : ''}
+                ${woreda ? `<div>Woreda: ${woreda}</div>` : ''}
+            </div>
             <div class="map-label-value">${metricKey.value.replace('_', ' ')}: ${formatNumber(feature.properties[metricKey.value])}</div>
             <div class="map-label-grid">
                 <div><span class="dot" style="background:${metricColors.population}"></span>${feature.properties.population.toLocaleString()} population</div>
@@ -162,12 +175,49 @@ const highlightStyle = {
     fillOpacity: 0.85,
 };
 
+const selectedStyle = {
+    weight: 3.5,
+    color: '#0f172a',
+    fillOpacity: 0.95,
+    dashArray: '2 3',
+};
+
+const dimStyle = {
+    weight: 0.8,
+    color: '#0f172a',
+    fillOpacity: 0.25,
+};
+
 const baseStyle = (feature) => ({
     weight: 1,
     color: '#0f172a',
     fillColor: getColor(feature.properties[metricKey.value]),
     fillOpacity: 0.65,
 });
+
+const clearSelection = () => {
+    selectedFeature.value = null;
+    selectedLayer = null;
+    if (geoLayer) {
+        geoLayer.setStyle(baseStyle);
+    }
+    if (pinnedPopup) {
+        pinnedPopup.remove();
+        pinnedPopup = null;
+    }
+};
+
+const applySelection = (layer, feature, latlng) => {
+    selectedFeature.value = feature;
+    selectedLayer = layer;
+    geoLayer.eachLayer((item) => item.setStyle(dimStyle));
+    layer.setStyle({
+        ...selectedStyle,
+        fillColor: getColor(feature.properties[metricKey.value]),
+    });
+    layer.bringToFront();
+    setPinnedPopup(latlng, feature);
+};
 
 const renderLayer = (data) => {
     if (geoLayer) {
@@ -184,14 +234,26 @@ const renderLayer = (data) => {
                 opacity: 1,
             });
             layer.on('mouseover', () => {
+                if (selectedLayer && selectedLayer !== layer) return;
                 layer.setStyle(highlightStyle);
             });
             layer.on('mouseout', () => {
+                if (selectedLayer) {
+                    if (selectedLayer === layer) {
+                        layer.setStyle({
+                            ...selectedStyle,
+                            fillColor: getColor(feature.properties[metricKey.value]),
+                        });
+                    }
+                    return;
+                }
                 geoLayer.resetStyle(layer);
             });
             layer.on('click', (event) => {
-                selectedFeature.value = feature;
-                setPinnedPopup(event.latlng, feature);
+                if (event.originalEvent) {
+                    L.DomEvent.stopPropagation(event.originalEvent);
+                }
+                applySelection(layer, feature, event.latlng);
             });
         },
     }).addTo(map);
@@ -215,11 +277,7 @@ const loadGeoData = async (level) => {
 const applyLevel = async () => {
     const data = await loadGeoData(levelKey.value);
     renderLayer(data);
-    selectedFeature.value = null;
-    if (pinnedPopup) {
-        pinnedPopup.remove();
-        pinnedPopup = null;
-    }
+    clearSelection();
 };
 
 const applyMetric = () => {
@@ -235,7 +293,7 @@ const applyMetric = () => {
             .getLayers()
             .find((item) => item.feature.properties.pcode === selectedFeature.value.properties.pcode);
         if (layer) {
-            setPinnedPopup(layer.getBounds().getCenter(), selectedFeature.value);
+            applySelection(layer, selectedFeature.value, layer.getBounds().getCenter());
         }
     }
 };
@@ -250,6 +308,10 @@ onMounted(async () => {
     });
 
     await applyLevel();
+
+    map.on('click', () => {
+        clearSelection();
+    });
 });
 
 watch(levelKey, () => {

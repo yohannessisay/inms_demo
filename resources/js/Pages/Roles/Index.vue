@@ -61,8 +61,8 @@ const confirmDelete = () => {
             <CardHeader>
                 <CardTitle class="text-lg">Available roles</CardTitle>
             </CardHeader>
-            <CardContent>
-                <div class="overflow-x-auto">
+            <CardContent class="overflow-visible">
+                <div class="relative overflow-x-auto overflow-y-visible">
                     <table class="min-w-full text-left text-sm">
                         <thead class="text-xs uppercase tracking-[0.2em] text-slate-500">
                             <tr>

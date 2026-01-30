@@ -41,7 +41,7 @@ class UserManagementController extends Controller
             });
         }
 
-        $users = $query->paginate(12)->withQueryString()->through(function (User $user) {
+        $users = $query->paginate(10)->withQueryString()->through(function (User $user) {
             return [
                 'id' => $user->id,
                 'name' => $user->name,
